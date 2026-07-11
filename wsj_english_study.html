@@ -1060,21 +1060,54 @@ function cleanImportedText(s){
     .replace(/[\u200B-\u200D\u2060\uFEFF]/g,''); // zero-width
   return stripMasthead(s).replace(/\s+/g,' ').trim();
 }
+// Imported articles carry no section, so guess one from the text and file
+// them into the same WSJ sections as the built-in articles. Best-effort,
+// offline, deterministic — runs on every load so stored papers re-sort too.
+const GENERIC_SECTIONS=['내가 넣은 신문','내가 추가한 기사',''];
+const SECTION_RULES=[
+  ['Markets', ['stock','shares','s&p','nasdaq',' dow ','bond','yield','treasur','investor','trading','trader',
+    'equit','commodit','oil price','crude','the dollar','currency','etf','portfolio','benchmark','rally','sell-off','wall street']],
+  ['Business & Finance', ['company','companies','ceo','chief executive','merger','acquisition','acquire','revenue',
+    'profit','earnings','startup','start-up','ipo','the deal','lender','layoff','corporate','quarterly','sales rose','sales fell']],
+  ['Life & Arts', ['film','movie','book','novel','author','artist','music','album','restaurant','recipe','fashion',
+    'style','travel','culture','museum','theater','theatre','celebrity','streaming','podcast','wellness','fitness','gallery','cuisine','director']],
+  ['Opinion', ['editorial','op-ed','opinion','commentary','columnist','we believe','viewpoint']],
+  ['U.S. & World News', ['president','government','election','senate','congress','lawmaker','military','minister',
+    'policy','court','immigration','white house','governor','federal','foreign','diplomat','protest','voters','administration','parliament','ukraine','israel']],
+];
+function classifySection(body, headline){
+  const t=(' '+(headline+' ').repeat(3)+' '+body+' ').toLowerCase();
+  const head=t.slice(0,240);   // explicit WSJ section label near the top wins
+  if(/life ?& ?arts|arts in review|personal journal/.test(head)) return 'Life & Arts';
+  if(/business ?& ?finance|business news/.test(head)) return 'Business & Finance';
+  if(/\bmarkets\b|money ?& ?investing/.test(head)) return 'Markets';
+  if(/review ?& ?outlook|\beditorial\b|\bop-ed\b/.test(head)) return 'Opinion';
+  if(/world news|u\.s\. news|u\.s\. ?& ?world/.test(head)) return 'U.S. & World News';
+  let best='U.S. & World News', bestScore=0;
+  for(const [sec,keys] of SECTION_RULES){
+    let s=0; for(const k of keys){ let i=t.indexOf(k); while(i!==-1){ s++; i=t.indexOf(k,i+k.length); } }
+    if(s>bestScore){ bestScore=s; best=sec; }
+  }
+  return bestScore>0?best:'U.S. & World News';
+}
 function mkArticle(raw, paperId, idx){
   const body=cleanImportedText(raw.body||'');
   const words=body.split(' ').length;
   const vocab=raw.vocab || [...new Set((body.match(/[a-z]{8,}/g)||[]))].slice(0,14);
-  const a={ id:paperId+'_'+idx, section:raw.section||'내가 넣은 신문', page:raw.page||null,
-    headline:cleanImportedText(raw.headline||'')||'제목 없음', byline:raw.byline||'', body, words,
+  const headline=cleanImportedText(raw.headline||'')||'제목 없음';
+  let section=raw.section||'';
+  if(GENERIC_SECTIONS.includes(section)) section=classifySection(body, headline);
+  const a={ id:paperId+'_'+idx, section, page:raw.page||null,
+    headline, byline:raw.byline||'', body, words,
     minutes:Math.max(1,Math.round(words/200)), vocab, vocabSet:new Set(vocab.map(w=>w.toLowerCase())) };
   return a;
 }
 // load a stored paper (from localStorage/remote) into the live ART list
 function loadPaperIntoART(paper){
-  if(!SECTIONS.includes(paper.section||'내가 넣은 신문')) SECTIONS.push(paper.section||'내가 넣은 신문');
   paper.articles.forEach((raw,idx)=>{
-    const a=mkArticle({...raw, section:paper.section}, paper.id, idx);
+    const a=mkArticle({...raw, section: raw.section||paper.section}, paper.id, idx);
     a.date = paper.date || todayStr();
+    if(!SECTIONS.includes(a.section)) SECTIONS.push(a.section);
     if(!ART.some(x=>x.id===a.id)) ART.unshift(a);
   });
 }
