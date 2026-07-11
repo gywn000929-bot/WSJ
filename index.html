@@ -1188,22 +1188,90 @@ async function handlePDF(file){
     toast(`✅ ${raws.length}개 기사 추가 완료`);
   }catch(e){ status.textContent='⚠️ PDF 처리 오류: '+e.message; }
 }
+/* ---- Newspaper page parser ------------------------------------------
+ * Splits one PDF page into separate articles using glyph coordinates:
+ *   1) detect the column grid from body-text x-positions (histogram peaks)
+ *   2) rebuild reading order column-by-column, top-to-bottom
+ *   3) start a new article at each large-font headline (merging multi-line
+ *      headlines), collect the body that follows
+ *   4) drop page furniture (mastheads, tickers, footers, section labels)
+ * Far better than dumping a whole page as one blob with a random headline.
+ * ------------------------------------------------------------------- */
+const FURN_RE=[
+  /^for personal/i,/non-commercial use only/i,/^the wall street journal\.?$/i,
+  /^\*+$/,/wsj\.com/i,/dow jones/i,/^continued/i,/please turn to/i,/^see\b.*\bpage/i,
+  /^(u\.s\.|world|business|markets|life|arts|opinion|sports|technology|personal journal|u\.s\.watch|world watch)\s*(news|& finance|& arts|watch)?\.?$/i,
+  /^what.?s$/i,/^news$/i,/^inside$/i,/^corrections/i,/^amplifications/i,/^contents$/i,/^mansion$/i,
+];
+function isFurniture(s){ s=(s||'').trim(); if(s.length<3) return true;
+  if(FURN_RE.some(re=>re.test(s))) return true;
+  const letters=(s.match(/[A-Za-z]/g)||[]).length; return letters<Math.max(2,s.length*0.4); }
+function looksLikeProse(body){
+  const toks=body.split(/\s+/).filter(Boolean); if(toks.length<40) return false;
+  // real article text is mostly lowercase words; ALL-CAPS ad copy, data
+  // tables and garbled custom-font pages have very few — so filter those out
+  const lower=toks.filter(t=>/[a-z]{2,}/.test(t)).length;
+  return lower/toks.length>=0.5;
+}
+function detectColumns(bodyRuns){
+  const bin=5,h={}; bodyRuns.forEach(r=>{const k=Math.round(r.x/bin)*bin; h[k]=(h[k]||0)+1;});
+  const keys=Object.keys(h).map(Number).sort((a,b)=>a-b); if(!keys.length) return [0];
+  const maxC=Math.max(...keys.map(k=>h[k])), th=Math.max(4,maxC*0.22);
+  const peaks=keys.filter(k=>h[k]>=th);
+  const wc=b=>{let s=0,w=0;b.forEach(k=>{s+=k*h[k];w+=h[k];});return s/w;};
+  const cols=[]; let g=[];
+  for(const k of peaks){ if(g.length && k-g[g.length-1]>60){ cols.push(wc(g)); g=[]; } g.push(k); }
+  if(g.length) cols.push(wc(g));
+  return cols.length?cols:[0];
+}
 function extractArticlesFromPage(items, fname, pno){
-  const out=[];
-  const lines=items.filter(it=>it.str.trim());
-  const sizes=lines.map(it=>Math.abs(it.transform[3])||it.height||0);
-  const med=sizes.slice().sort((a,b)=>a-b)[Math.floor(sizes.length/2)]||8;
-  let text='', heads=[];
-  lines.forEach(it=>{
-    const sz=Math.abs(it.transform[3])||it.height||med;
-    if(sz>med*1.5 && it.str.trim().length>4 && it.str.trim().length<90){ heads.push(it.str.trim()); }
-    text+=it.str+(it.hasEOL?' ':'');
+  let runs=items.filter(it=>it.str.trim())
+    .map(it=>({s:it.str, x:it.transform[4], y:it.transform[5], w:it.width||0,
+               fs:Math.abs(it.transform[3])||it.height||0}));
+  if(runs.length<25) return [];
+  const fsSorted=runs.map(r=>r.fs).sort((a,b)=>a-b);
+  const bodyFS=fsSorted[Math.floor(fsSorted.length*0.5)]||9;
+  const headTh=Math.max(bodyFS*1.55, 13);
+  const cols=detectColumns(runs.filter(r=>r.fs<=bodyFS*1.25));
+  const colOf=x=>{ let bi=0,bd=1e9; cols.forEach((c,i)=>{const d=Math.abs(x-c);if(d<bd){bd=d;bi=i;}}); return bi; };
+  runs.forEach(r=>r.col=colOf(r.x));
+  const byCol={}; runs.forEach(r=>{ (byCol[r.col]=byCol[r.col]||[]).push(r); });
+  const lines=[];
+  Object.keys(byCol).map(Number).sort((a,b)=>a-b).forEach(ci=>{
+    const rs=byCol[ci].sort((a,b)=> b.y-a.y || a.x-b.x);
+    let cur=null;
+    for(const r of rs){
+      if(cur && Math.abs(cur.y-r.y)<=Math.max(2,r.fs*0.45)) cur.runs.push(r);
+      else { cur={col:ci, y:r.y, runs:[r]}; lines.push(cur); }
+    }
   });
-  text=text.replace(/-\s+/g,'').replace(/\s+/g,' ').trim();
-  if(text.split(' ').length<120) return out;
-  const headline=heads.find(h=>/^[A-Z]/.test(h)&&h.split(' ').length>=3)||(`${fname} p.${pno}`);
-  out.push({ section:'내가 넣은 신문', page:pno, headline, byline:'', body:text });
-  return out;
+  const joinRuns=rr=>{ rr=rr.slice().sort((a,b)=>a.x-b.x); let s='',pr=null;
+    for(const r of rr){ if(pr){ const gap=r.x-(pr.x+pr.w); if(gap>Math.max(1,r.fs*0.22)) s+=' '; } s+=r.s; pr=r; }
+    return s.replace(/\s+/g,' ').trim(); };
+  lines.forEach(L=>{
+    L.text=joinRuns(L.runs);
+    const big=L.runs.filter(r=>r.fs>=headTh);
+    L.bigText=joinRuns(big);
+    L.fs=Math.max.apply(null,L.runs.map(r=>r.fs));
+    const bigW=big.reduce((a,r)=>a+r.w,0), allW=L.runs.reduce((a,r)=>a+r.w,0)||1;
+    L.isHead = L.fs>=headTh && bigW/allW>0.6 && L.bigText.length>=5 && L.bigText.length<=110;
+  });
+  lines.sort((a,b)=> a.col-b.col || b.y-a.y );
+  const arts=[]; let cur=null;
+  const flush=()=>{ if(cur){ const body=cur.body.join(' ').replace(/\s+/g,' ').trim();
+    if(body.split(/\s+/).filter(Boolean).length>=55 && looksLikeProse(body)) cur._body=body, arts.push(cur); } };
+  for(const L of lines){
+    if(isFurniture(L.text)) continue;
+    if(L.isHead){
+      const cont=cur && cur.inHead && cur.col===L.col && Math.abs(cur.lastY-L.y)<L.fs*2.2;
+      if(cont){ cur.head.push(L.bigText); cur.lastY=L.y; }
+      else { flush(); cur={head:[L.bigText], body:[], inHead:true, col:L.col, lastY:L.y}; }
+    } else if(cur){ cur.inHead=false; cur.body.push(L.text); }
+  }
+  flush();
+  return arts.map(a=>({ section:'내가 넣은 신문', page:pno, byline:'',
+      headline:a.head.join(' ').replace(/\s+/g,' ').trim(), body:a._body }))
+    .filter(a=>a.headline.length>4 && !isFurniture(a.headline) && a.headline.split(' ').length>=2);
 }
 
 /* ---------------- utils ---------------- */
