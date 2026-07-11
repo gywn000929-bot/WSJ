@@ -96,6 +96,9 @@ main{min-width:0;padding:clamp(20px,4vw,48px) clamp(18px,5vw,64px)}
 .reader .byline .datedit{border:1px solid var(--line);background:var(--surface);color:var(--accent);
   border-radius:8px;padding:3px 9px;font-size:11.5px;font-weight:600;font-family:var(--sans);cursor:pointer}
 .reader .byline .datedit:hover{border-color:var(--accent);background:var(--accent-soft)}
+.reader .byline .datedit.del{color:#b23a2b}
+.reader .byline .datedit.del:hover{border-color:#b23a2b;background:#fdecea}
+html[data-theme="dark"] .reader .byline .datedit.del:hover{background:#3a201d}
 
 .toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:16px 0 26px;
   padding:8px;background:var(--surface);border:1px solid var(--line);border-radius:12px;
@@ -656,6 +659,22 @@ function editPaperDate(artId){
   toast('발행일을 '+issueLabel(date)+'로 바꿨습니다');
   if(curArt && String(curArt.id)===String(artId)) openArticle(artId);
 }
+function deletePaper(artId){
+  const paper=store.papers.find(p=>String(artId).startsWith(p.id+'_'));
+  if(!paper){ toast('이 신문은 삭제할 수 없습니다'); return; }
+  if(!confirm(`'${paper.title}' 신문과 그 안의 기사 ${paper.articles.length}개를 모두 삭제할까요?`)) return;
+  for(let i=ART.length-1;i>=0;i--){ if(String(ART[i].id).startsWith(paper.id+'_')) ART.splice(i,1); }
+  store.papers = store.papers.filter(p=>p.id!==paper.id);
+  uploadedPapers.delete(paper.id); fbRemovePaper(paper.id);
+  SECTIONS.length=0; [...new Set(ART.map(a=>a.section))].forEach(s=>SECTIONS.push(s));
+  if(!SECTIONS.includes(curFilter)) curFilter='ALL';
+  curArt=null;
+  $('#reader').innerHTML=`<div class="empty"><div class="big">📖</div>
+    <p>왼쪽에서 기사를 선택하세요.<br>단어를 <b>탭</b>하면 발음·뜻·한국어 번역이 나옵니다.</p></div>`;
+  renderSectFilter(); renderList(); scheduleSync();
+  logActivity('paper','🗑️','신문 삭제: '+paper.title);
+  toast('신문을 삭제했습니다');
+}
 function pageOf(a){ return a.page==null?999:a.page; }
 function renderList(){
   const q=($('#search').value||'').toLowerCase();
@@ -759,7 +778,8 @@ function openArticle(id){
     <h1>${esc(a.headline)}</h1>
     <div class="byline">${a.byline?'<b>'+esc(a.byline)+'</b>':''}
       <span>The Wall Street Journal · ${esc(enDate(a.date)||'June 30, 2026')}</span>
-      ${isUserPaper(a)?`<button class="datedit" onclick="editPaperDate('${esc(String(a.id))}')" title="발행일 수정">🗓 발행일 수정</button>`:''}</div>
+      ${isUserPaper(a)?`<button class="datedit" onclick="editPaperDate('${esc(String(a.id))}')" title="발행일 수정">🗓 발행일 수정</button>
+      <button class="datedit del" onclick="deletePaper('${esc(String(a.id))}')" title="이 신문 전체 삭제">🗑️ 신문 삭제</button>`:''}</div>
     <div class="toolbar">
       <button id="btnPlay" onclick="toggleSpeak()">🔊 <span class="tl">듣기</span></button>
       <div class="grp hide-sm">속도<input type="range" min="0.6" max="1.4" step="0.1" value="1"
@@ -1493,6 +1513,7 @@ async function fbPush(){
   finally{ fbBusy=false; }
 }
 async function fbRemoveVocab(word){ if(fbActive()){ try{ await fbReq('PATCH','vocab',{[word]:null}); }catch(e){} } }
+async function fbRemovePaper(id){ if(fbActive()){ try{ await fbReq('DELETE','papers/'+fbKey(id)); }catch(e){} } }
 async function fbClearVocab(){ if(fbActive()){ try{ await fbReq('PUT','vocab',{}); }catch(e){} } }
 function connectFirebase(){
   const url=($('#fbUrl').value||'').trim();
