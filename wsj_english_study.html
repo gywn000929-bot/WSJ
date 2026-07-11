@@ -910,12 +910,33 @@ function parseDateFromName(name){
   const m=/(20\d{2})[-_.]?(0[1-9]|1[0-2])[-_.]?(0[1-9]|[12]\d|3[01])/.exec(name||'');
   return m ? `${m[1]}-${m[2]}-${m[3]}` : todayStr();
 }
+// PDF text extraction often leaves broken glyphs (custom-font arrows/bullets
+// mapped into the private-use area → □ boxes) and drags the WSJ front-page
+// market-index ticker into the body. Clean both so imported text reads right.
+// Runs on every load of a stored paper, so already-saved articles are fixed too.
+function stripMasthead(s){
+  const head=s.slice(0,900);
+  if(!/DJIA/i.test(head) || !/NASDAQ/i.test(head)) return s;           // only WSJ index blocks
+  const m=/YEN[^A-Za-z]{0,8}\d[\d.,]*/i.exec(head);                    // ticker ends at YEN <num>
+  if(!m) return s;
+  const cut=m.index+m[0].length;
+  if(cut>=900) return s;                                               // don't chop into real prose
+  return s.slice(cut).replace(/^[^A-Za-z]+/,'');
+}
+function cleanImportedText(s){
+  s=String(s||'')
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/g,'') // control / C1
+    .replace(/[\uE000-\uF8FF]/g,'')      // private-use glyphs (mis-mapped PDF fonts → boxes)
+    .replace(/[\uFFF0-\uFFFF]/g,'')      // specials / replacement char
+    .replace(/[\u200B-\u200D\u2060\uFEFF]/g,''); // zero-width
+  return stripMasthead(s).replace(/\s+/g,' ').trim();
+}
 function mkArticle(raw, paperId, idx){
-  const body=(raw.body||'').replace(/\s+/g,' ').trim();
+  const body=cleanImportedText(raw.body||'');
   const words=body.split(' ').length;
   const vocab=raw.vocab || [...new Set((body.match(/[a-z]{8,}/g)||[]))].slice(0,14);
   const a={ id:paperId+'_'+idx, section:raw.section||'내가 넣은 신문', page:raw.page||null,
-    headline:raw.headline||'제목 없음', byline:raw.byline||'', body, words,
+    headline:cleanImportedText(raw.headline||'')||'제목 없음', byline:raw.byline||'', body, words,
     minutes:Math.max(1,Math.round(words/200)), vocab, vocabSet:new Set(vocab.map(w=>w.toLowerCase())) };
   return a;
 }
