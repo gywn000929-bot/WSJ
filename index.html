@@ -93,6 +93,9 @@ main{min-width:0;padding:clamp(20px,4vw,48px) clamp(18px,5vw,64px)}
 .reader .byline{font-size:13px;color:var(--sub);border-bottom:1px solid var(--line);
   padding-bottom:16px;display:flex;gap:8px 14px;flex-wrap:wrap;align-items:center}
 .reader .byline b{color:var(--ink);font-weight:600;letter-spacing:.3px}
+.reader .byline .datedit{border:1px solid var(--line);background:var(--surface);color:var(--accent);
+  border-radius:8px;padding:3px 9px;font-size:11.5px;font-weight:600;font-family:var(--sans);cursor:pointer}
+.reader .byline .datedit:hover{border-color:var(--accent);background:var(--accent-soft)}
 
 .toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:16px 0 26px;
   padding:8px;background:var(--surface);border:1px solid var(--line);border-radius:12px;
@@ -423,6 +426,13 @@ kbd{background:var(--line2);border:1px solid var(--line);border-radius:5px;paddi
     ① PDF를 아래 상자에 <b>드래그&드롭</b>하거나 클릭해 선택하면 자동으로 텍스트를 뽑아 리딩 목록에 추가합니다.<br>
     ② 또는 기사 텍스트를 직접 <b>붙여넣기</b> 하세요. <span style="color:var(--faint)">(PDF 해석·사전·번역은 인터넷 연결 시 동작합니다.)</span>
   </div>
+  <div class="cfgrow" style="margin:4px 0 12px">
+    <div style="flex:1">
+      <label style="display:block;font-size:12.5px;font-weight:600;color:var(--sub);margin-bottom:5px">
+        📅 신문 발행일 <span style="color:var(--faint);font-weight:400">(비워두면 신문 내용/파일명에서 자동 인식)</span></label>
+      <input class="field-title" id="pdfDate" type="date" title="이 신문의 발행일" style="max-width:280px">
+    </div>
+  </div>
   <div id="drop">
     <div class="big">📄</div>
     <p><b>WSJ PDF를 여기에 놓으세요</b><br><span style="color:var(--faint);font-size:12px">클릭해서 파일 선택도 가능</span></p>
@@ -614,6 +624,38 @@ function issueLabel(date){
   const wd=WD[new Date(date+'T00:00:00').getDay()];
   return `${+m[1]}. ${+m[2]}. ${+m[3]} (${wd})`;
 }
+const MONTHS=['January','February','March','April','May','June','July','August',
+  'September','October','November','December'];
+function enDate(date){
+  const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(date||'');
+  return m ? `${MONTHS[+m[2]-1]} ${+m[3]}, ${+m[1]}` : '';
+}
+// find the WSJ issue date inside extracted text, e.g. "THURSDAY, JULY 9, 2026"
+function parseIssueDate(text){
+  const re=/\b(january|february|march|april|may|june|july|august|september|october|november|december)\s+(\d{1,2})\s*,?\s*(20\d\d)\b/i;
+  const m=re.exec(text||''); if(!m) return null;
+  const mo=MONTHS.findIndex(x=>x.toLowerCase()===m[1].toLowerCase())+1;
+  const d=+m[2]; if(!mo||d<1||d>31) return null;
+  return `${m[3]}-${String(mo).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+}
+// is this article part of a user-imported paper (so its date is editable)?
+function isUserPaper(a){ return store.papers.some(p=>String(a.id).startsWith(p.id+'_')); }
+function editPaperDate(artId){
+  const a=ART.find(x=>String(x.id)===String(artId)); if(!a) return;
+  const paper=store.papers.find(p=>String(artId).startsWith(p.id+'_'));
+  if(!paper){ toast('이 기사는 발행일을 바꿀 수 없습니다'); return; }
+  const v=prompt('이 신문의 발행일을 입력하세요 (YYYY-MM-DD)', a.date||todayStr());
+  if(v==null) return;
+  const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(v.trim());
+  if(!m){ toast('YYYY-MM-DD 형식으로 입력하세요'); return; }
+  const date=v.trim();
+  const papers=store.papers; const p=papers.find(x=>x.id===paper.id);
+  p.date=date; store.papers=papers;
+  ART.forEach(x=>{ if(String(x.id).startsWith(paper.id+'_')) x.date=date; });
+  renderList(); scheduleSync();
+  toast('발행일을 '+issueLabel(date)+'로 바꿨습니다');
+  if(curArt && String(curArt.id)===String(artId)) openArticle(artId);
+}
 function pageOf(a){ return a.page==null?999:a.page; }
 function renderList(){
   const q=($('#search').value||'').toLowerCase();
@@ -716,7 +758,8 @@ function openArticle(id){
     <div class="kicker">${esc(a.section)}${a.page?' · PAGE '+a.page:''}</div>
     <h1>${esc(a.headline)}</h1>
     <div class="byline">${a.byline?'<b>'+esc(a.byline)+'</b>':''}
-      <span>The Wall Street Journal · June 30, 2026</span></div>
+      <span>The Wall Street Journal · ${esc(enDate(a.date)||'June 30, 2026')}</span>
+      ${isUserPaper(a)?`<button class="datedit" onclick="editPaperDate('${esc(String(a.id))}')" title="발행일 수정">🗓 발행일 수정</button>`:''}</div>
     <div class="toolbar">
       <button id="btnPlay" onclick="toggleSpeak()">🔊 <span class="tl">듣기</span></button>
       <div class="grp hide-sm">속도<input type="range" min="0.6" max="1.4" step="0.1" value="1"
@@ -1094,16 +1137,20 @@ async function handlePDF(file){
     status.textContent='📖 텍스트 추출 중…';
     const buf=await file.arrayBuffer();
     const pdf=await pdfjs.getDocument({data:buf}).promise;
-    const raws=[];
+    const raws=[]; let firstPageText='';
     for(let p=1;p<=pdf.numPages;p++){
       status.textContent=`📖 ${p}/${pdf.numPages} 페이지 분석 중… (기사 ${raws.length}개)`;
       const page=await pdf.getPage(p);
       const tc=await page.getTextContent();
+      if(p===1) firstPageText=tc.items.map(it=>it.str).join(' ');
       extractArticlesFromPage(tc.items, file.name, p).forEach(a=>raws.push(a));
     }
     if(!raws.length){ status.textContent='⚠️ 기사를 찾지 못했습니다. 텍스트 붙여넣기를 이용해 보세요.'; return; }
     const title=file.name.replace(/\.pdf$/i,'');
-    registerPaper({ title, section:'내가 넣은 신문', date:parseDateFromName(file.name), articles:raws });
+    // date priority: user-entered field → date printed in the paper → filename → today
+    const picked=($('#pdfDate').value)||parseIssueDate(firstPageText)||parseDateFromName(file.name);
+    registerPaper({ title, section:'내가 넣은 신문', date:picked, articles:raws });
+    $('#pdfDate').value='';
     status.innerHTML=`✅ <b>${raws.length}개</b> 기사를 추가했습니다! 상단 <b>📰 리딩</b>에서 확인하세요.`;
     toast(`✅ ${raws.length}개 기사 추가 완료`);
   }catch(e){ status.textContent='⚠️ PDF 처리 오류: '+e.message; }
