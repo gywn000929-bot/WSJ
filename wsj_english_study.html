@@ -14,6 +14,11 @@
   --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Malgun Gothic','Apple SD Gothic Neo',sans-serif;
   --measure:37rem; --fs:20px;
 }
+/* 배경 테마: 기본 :root = 연베이지, white = 화이트, dark = 블랙 */
+html[data-theme="white"]{
+  --bg:#ffffff; --surface:#ffffff; --line:#e8e8ec; --line2:#f3f3f5;
+  --accent-soft:#eaf1f8; --mark:#fdf0bf;
+}
 html[data-theme="dark"]{
   --bg:#0f1216; --surface:#171b21; --ink:#e9e6df; --sub:#a2a8b0; --faint:#767c85;
   --line:#262b33; --line2:#1e232a; --accent:#7fb0ff; --accent-soft:#1c2836;
@@ -101,7 +106,7 @@ main{min-width:0;padding:clamp(20px,4vw,48px) clamp(18px,5vw,64px)}
 .toolbar .grp{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--faint);padding:0 4px;white-space:nowrap;flex:none}
 .toolbar input[type=range]{width:84px;accent-color:var(--accent)}
 
-.body{font-family:var(--serif);font-size:var(--fs);line-height:1.92;color:var(--ink)}
+.body{font-family:var(--reading-font,var(--serif));font-size:var(--fs);line-height:1.92;color:var(--ink)}
 .body p{margin:0 0 1.35em;max-width:var(--measure)}
 .body p:first-of-type::first-letter{font-size:3.1em;line-height:.86;float:left;font-weight:800;
   padding:2px 10px 0 0;color:var(--ink)}
@@ -265,6 +270,26 @@ html[data-theme="dark"] .syncbanner.err{background:#3a201d;color:#ff9b8f}
 .log-item .li-i{flex:none}
 @media(max-width:520px){ .cfgrow{flex-direction:column;gap:0} .log-item .li-t{min-width:auto} }
 
+/* ---------- Settings menu ---------- */
+.setwrap{position:relative}
+.setmenu{position:absolute;right:0;top:calc(100% + 10px);width:264px;max-width:calc(100vw - 24px);
+  background:var(--surface);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);
+  padding:16px;z-index:70;display:none}
+.setmenu.show{display:block;animation:pop .16s ease}
+.set-sec+.set-sec{margin-top:15px;padding-top:15px;border-top:1px solid var(--line2)}
+.set-h{font-size:11px;font-weight:700;color:var(--faint);text-transform:uppercase;letter-spacing:.7px;margin-bottom:9px}
+.set-opts{display:flex;gap:6px}
+.set-opts button{flex:1;border:1px solid var(--line);background:var(--surface);color:var(--sub);
+  border-radius:10px;padding:9px 4px;font-size:12.5px;font-weight:600;transition:.12s}
+.set-opts button:hover{border-color:var(--accent);color:var(--ink)}
+.set-opts button.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+.set-swatch{display:inline-block;width:12px;height:12px;border-radius:50%;border:1px solid var(--line);margin-right:5px;vertical-align:-1px}
+.set-size{display:flex;align-items:center;gap:9px}
+.set-size button{border:1px solid var(--line);background:var(--surface);border-radius:9px;padding:6px 11px;font-size:14px;font-weight:700}
+.set-size button:hover{border-color:var(--accent)}
+.set-size input[type=range]{flex:1;accent-color:var(--accent);min-width:0}
+.set-size .fsval{font-size:12px;color:var(--faint);min-width:38px;text-align:right}
+
 .hide{display:none!important}
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(10px);background:var(--ink);
   color:var(--bg);padding:12px 20px;border-radius:24px;font-size:14px;z-index:300;box-shadow:var(--shadow);
@@ -316,7 +341,36 @@ kbd{background:var(--line2);border:1px solid var(--line);border-radius:5px;paddi
     <button id="navVocab" onclick="showView('vocab')">📒<span class="label">단어장</span> <span class="badge" id="vcount">0</span></button>
     <button id="navImport" class="hide-xs" onclick="showView('import')">➕<span class="label">신문 넣기</span></button>
     <button id="navSync" onclick="showView('sync')">☁️<span class="label">동기화</span><span class="syncdot" id="syncdot"></span></button>
-    <button class="ghost" id="themeBtn" onclick="toggleTheme()" aria-label="테마">🌙</button>
+    <div class="setwrap">
+      <button class="ghost" id="setBtn" onclick="toggleSettings(event)" aria-label="화면 설정">🎨</button>
+      <div id="setmenu" class="setmenu">
+        <div class="set-sec">
+          <div class="set-h">배경</div>
+          <div class="set-opts" id="optTheme">
+            <button data-v="white" onclick="setTheme('white')"><span class="set-swatch" style="background:#ffffff"></span>화이트</button>
+            <button data-v="beige" onclick="setTheme('beige')"><span class="set-swatch" style="background:#faf9f6"></span>연베이지</button>
+            <button data-v="dark" onclick="setTheme('dark')"><span class="set-swatch" style="background:#0f1216"></span>블랙</button>
+          </div>
+        </div>
+        <div class="set-sec">
+          <div class="set-h">글꼴</div>
+          <div class="set-opts" id="optFont">
+            <button data-v="serif" onclick="setReadFont('serif')" style="font-family:Georgia,serif">세리프</button>
+            <button data-v="sans" onclick="setReadFont('sans')" style="font-family:-apple-system,'Malgun Gothic',sans-serif">고딕</button>
+            <button data-v="palatino" onclick="setReadFont('palatino')" style="font-family:'Palatino Linotype','Book Antiqua',Palatino,serif">팔라티노</button>
+          </div>
+        </div>
+        <div class="set-sec">
+          <div class="set-h">글자 크기</div>
+          <div class="set-size">
+            <button onclick="setFont(-1)" aria-label="작게">A−</button>
+            <input type="range" id="fsRange" min="15" max="30" step="1" value="20" oninput="setFontAbs(+this.value)">
+            <button onclick="setFont(1)" aria-label="크게">A＋</button>
+            <span class="fsval" id="fsVal">20px</span>
+          </div>
+        </div>
+      </div>
+    </div>
   </nav>
 </header>
 
@@ -495,14 +549,52 @@ function showView(v){
   if(v==='sync') renderSync();
   stopSpeak(); hidePop(); closeDrawer();
 }
-function toggleTheme(){
+/* ---------------- Appearance (배경·글꼴·글자크기) ---------------- */
+const READ_FONTS={
+  serif:"Georgia,'Times New Roman','Nanum Myeongjo',serif",
+  sans:"-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Malgun Gothic','Apple SD Gothic Neo',sans-serif",
+  palatino:"'Palatino Linotype','Book Antiqua',Palatino,'Nanum Myeongjo',serif"
+};
+function setTheme(v){
   const d=document.documentElement;
-  const dark=d.getAttribute('data-theme')==='dark';
-  d.setAttribute('data-theme', dark?'light':'dark');
-  $('#themeBtn').textContent = dark?'🌙':'☀️';
-  localStorage.setItem('wsj_theme', dark?'light':'dark');
+  if(v==='beige') d.removeAttribute('data-theme'); else d.setAttribute('data-theme',v);
+  localStorage.setItem('wsj_theme',v); syncSettingUI();
 }
-if(localStorage.getItem('wsj_theme')==='dark'){ document.documentElement.setAttribute('data-theme','dark'); $('#themeBtn').textContent='☀️'; }
+function setReadFont(v){
+  document.documentElement.style.setProperty('--reading-font', READ_FONTS[v]||READ_FONTS.serif);
+  localStorage.setItem('wsj_font',v); syncSettingUI();
+}
+function curFs(){ return parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--fs'))||20; }
+function applyFontSize(px){
+  fontSize=Math.max(15,Math.min(30,Math.round(px)));
+  document.documentElement.style.setProperty('--fs',fontSize+'px');
+  localStorage.setItem('wsj_fs',fontSize);
+  const r=$('#fsRange'), l=$('#fsVal');
+  if(r) r.value=fontSize; if(l) l.textContent=fontSize+'px';
+}
+function setFont(d){ applyFontSize((fontSize||curFs())+d*1.5); }
+function setFontAbs(px){ applyFontSize(px); }
+function syncSettingUI(){
+  const th=localStorage.getItem('wsj_theme')||'beige';
+  const fn=localStorage.getItem('wsj_font')||'serif';
+  $$('#optTheme button').forEach(b=>b.classList.toggle('on',b.dataset.v===th));
+  $$('#optFont button').forEach(b=>b.classList.toggle('on',b.dataset.v===fn));
+  const r=$('#fsRange'), l=$('#fsVal'), s=fontSize||curFs();
+  if(r) r.value=s; if(l) l.textContent=Math.round(s)+'px';
+}
+function toggleSettings(e){ if(e) e.stopPropagation(); $('#setmenu').classList.toggle('show'); syncSettingUI(); }
+document.addEventListener('click',e=>{
+  const m=$('#setmenu');
+  if(m && m.classList.contains('show') && !m.contains(e.target) && e.target.id!=='setBtn') m.classList.remove('show');
+});
+(function initAppearance(){
+  const th=localStorage.getItem('wsj_theme');
+  if(th && th!=='beige') document.documentElement.setAttribute('data-theme',th);
+  const fn=localStorage.getItem('wsj_font');
+  if(fn && READ_FONTS[fn]) document.documentElement.style.setProperty('--reading-font',READ_FONTS[fn]);
+  const fs=parseFloat(localStorage.getItem('wsj_fs'));
+  if(fs){ fontSize=Math.max(15,Math.min(30,fs)); document.documentElement.style.setProperty('--fs',fontSize+'px'); }
+})();
 
 /* ---------------- Sidebar list ---------------- */
 function renderSectFilter(){
@@ -638,7 +730,6 @@ function openArticle(id){
     </div>
     <div class="body showvocab" id="artbody">${paras.join('')}</div>
     <p class="readtip">💡 단어 탭 → 뜻·발음·번역 · <b>🔊 듣기</b>로 낭독 · <b>🇰🇷 문장번역</b> 켜고 문장 아무 곳이나 탭 → 한국어 해석</p>`;
-  if(fontSize) $('#artbody').style.setProperty('--fs',fontSize+'px');
   bindWords();
   window.scrollTo({top:0,behavior:'smooth'});
 }
@@ -653,11 +744,6 @@ function bindWords(){
     if(e.target.classList && e.target.classList.contains('ko-inline')) return;
     translateSentence(el);
   }));
-}
-function setFont(d){
-  const cur=fontSize||parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--fs'))||20;
-  fontSize=Math.max(15,Math.min(30,cur+d*1.5));
-  const b=$('#artbody'); if(b) b.style.setProperty('--fs',fontSize+'px');
 }
 function valLbl(el){ $('#rateLbl').textContent=(+el.value).toFixed(1)+'×'; }
 
