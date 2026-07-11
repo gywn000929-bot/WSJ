@@ -107,14 +107,18 @@ main{min-width:0;padding:clamp(20px,4vw,48px) clamp(18px,5vw,64px)}
   padding:2px 10px 0 0;color:var(--ink)}
 .body .sent{transition:background .2s;border-radius:3px}
 .body .sent.speaking{background:var(--mark)}
-.body.transmode .sent{cursor:pointer}
+.body.transmode .sent{cursor:pointer;-webkit-tap-highlight-color:transparent}
 .body.transmode .sent:hover{background:var(--line2)}
+.body.transmode .sent:active{background:var(--accent-soft)}
+.body.transmode .sent.ko-open{background:var(--accent-soft);box-shadow:inset 0 -2px 0 var(--accent)}
 .w{cursor:pointer;border-radius:2px;transition:background .1s}
 .w:hover{background:var(--mark)}
 .body.showvocab .w.vocab{box-shadow:inset 0 -2px 0 var(--mark-line)}
 .w.saved{background:var(--mark);box-shadow:inset 0 -2px 0 var(--mark-line)}
 .ko-inline{display:block;color:var(--accent);font-family:var(--sans);font-size:.72em;
-  margin:.5em 0 1.1em;padding:10px 14px;background:var(--accent-soft);border-radius:10px;line-height:1.6}
+  margin:.5em 0 1.1em;padding:10px 36px 10px 14px;background:var(--accent-soft);border-radius:10px;
+  line-height:1.6;cursor:pointer;position:relative}
+.ko-inline::after{content:"✕";position:absolute;top:8px;right:12px;font-size:13px;color:var(--faint);font-weight:600}
 .readtip{font-family:var(--sans);font-size:12.5px;color:var(--faint);margin-top:34px;
   padding-top:16px;border-top:1px solid var(--line)}
 
@@ -290,7 +294,8 @@ kbd{background:var(--line2);border:1px solid var(--line);border-radius:5px;paddi
   .toolbar .grp.hide-sm{display:none}
   .body p:first-of-type::first-letter{font-size:2.6em}
   #pop.show{position:fixed;left:0!important;right:0;bottom:0;top:auto!important;width:100%;max-width:100%;
-    border-radius:18px 18px 0 0;padding:20px;animation:sheet .22s ease}
+    border-radius:18px 18px 0 0;padding:20px 20px calc(20px + env(safe-area-inset-bottom));
+    max-height:82vh;overflow-y:auto;-webkit-overflow-scrolling:touch;animation:sheet .22s ease}
   @keyframes sheet{from{transform:translateY(100%)}to{transform:translateY(0)}}
   .fcard{padding:38px 18px}
 }
@@ -632,18 +637,20 @@ function openArticle(id){
       <div class="grp">글자<button onclick="setFont(-1)" style="padding:6px 9px">A−</button><button onclick="setFont(1)" style="padding:6px 9px">A＋</button></div>
     </div>
     <div class="body showvocab" id="artbody">${paras.join('')}</div>
-    <p class="readtip">💡 단어 탭 → 뜻·발음·번역 · <b>🔊 듣기</b>로 낭독 · <b>🇰🇷</b> 켜고 문장 탭 → 한국어 해석</p>`;
+    <p class="readtip">💡 단어 탭 → 뜻·발음·번역 · <b>🔊 듣기</b>로 낭독 · <b>🇰🇷 문장번역</b> 켜고 문장 아무 곳이나 탭 → 한국어 해석</p>`;
   if(fontSize) $('#artbody').style.setProperty('--fs',fontSize+'px');
   bindWords();
   window.scrollTo({top:0,behavior:'smooth'});
 }
 function bindWords(){
   $$('#artbody .w').forEach(el=>el.addEventListener('click',e=>{
-    e.stopPropagation(); showWord(el.dataset.w, el);
+    e.stopPropagation();
+    if(transMode){ const s=el.closest('.sent'); if(s){ translateSentence(s); return; } }
+    showWord(el.dataset.w, el);
   }));
   $$('#artbody .sent').forEach(el=>el.addEventListener('click',e=>{
     if(!transMode) return;
-    if(e.target.classList.contains('w')) return;
+    if(e.target.classList && e.target.classList.contains('ko-inline')) return;
     translateSentence(el);
   }));
 }
@@ -664,15 +671,17 @@ let transMode=false;
 function toggleTrans(){ transMode=!transMode;
   $('#artbody').classList.toggle('transmode',transMode);
   $('#btnTrans').classList.toggle('on',transMode);
-  toast(transMode?'문장을 탭하면 한국어 번역이 나옵니다':'문장번역 끔');
+  toast(transMode?'문장을 탭하면 한국어 번역이 나옵니다 (단어 뜻은 문장번역을 끄고 탭)':'문장번역 끔 · 단어를 탭하면 뜻이 나옵니다');
 }
 async function translateSentence(el){
   if(el.nextSibling && el.nextSibling.classList && el.nextSibling.classList.contains('ko-inline')){
-    el.nextSibling.remove(); return;
+    el.nextSibling.remove(); el.classList.remove('ko-open'); return;
   }
   const txt=el.textContent.trim(); if(!txt) return;
   const ko=document.createElement('span'); ko.className='ko-inline'; ko.textContent='번역 중…';
-  el.after(ko);
+  ko.title='탭하면 닫기';
+  ko.addEventListener('click',ev=>{ ev.stopPropagation(); ko.remove(); el.classList.remove('ko-open'); });
+  el.after(ko); el.classList.add('ko-open');
   const t=await translateKO(txt);
   ko.textContent = t || '(번역 실패 — 인터넷 연결을 확인하세요)';
 }
